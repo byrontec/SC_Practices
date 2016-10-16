@@ -58,6 +58,8 @@ extern uint32_t __STACK_TOP;
 extern void IntHandlerI2C1(void);
 extern void IntHandlerTimer0A(void);
 extern void UARTIntHandler(void);
+extern void IntHandlerADC0SS3(void);
+
 //*****************************************************************************
 //
 // The vector table.  Note that the proper constructs must be placed on this to
@@ -102,7 +104,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // ADC Sequence 0
     IntDefaultHandler,                      // ADC Sequence 1
     IntDefaultHandler,                      // ADC Sequence 2
-    IntDefaultHandler,                      // ADC Sequence 3
+	IntHandlerADC0SS3,                      // ADC Sequence 3
     IntDefaultHandler,                      // Watchdog timer
 	IntHandlerTimer0A,                      // Timer 0 subtimer A
     IntDefaultHandler,                      // Timer 0 subtimer B

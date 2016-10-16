@@ -22,6 +22,7 @@ main.obj: C:/ti/TivaWare_C_Series-2.1.1.71/sensorlib/mpu9150.h
 main.obj: C:/ti/TivaWare_C_Series-2.1.1.71/driverlib/timer.h
 main.obj: C:/ti/TivaWare_C_Series-2.1.1.71/sensorlib/comp_dcm.h
 main.obj: C:/ti/TivaWare_C_Series-2.1.1.71/driverlib/uart.h
+main.obj: C:/ti/TivaWare_C_Series-2.1.1.71/driverlib/adc.h
 
 ../main.c: 
 C:/ti/ccsv6/tools/compiler/ti-cgt-arm_5.2.2/include/stdint.h: 
@@ -45,3 +46,4 @@ C:/ti/TivaWare_C_Series-2.1.1.71/sensorlib/mpu9150.h:
 C:/ti/TivaWare_C_Series-2.1.1.71/driverlib/timer.h: 
 C:/ti/TivaWare_C_Series-2.1.1.71/sensorlib/comp_dcm.h: 
 C:/ti/TivaWare_C_Series-2.1.1.71/driverlib/uart.h: 
+C:/ti/TivaWare_C_Series-2.1.1.71/driverlib/adc.h: 

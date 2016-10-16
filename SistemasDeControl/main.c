@@ -18,15 +18,19 @@
 #include "driverlib/timer.h"
 #include "sensorlib/comp_dcm.h"
 #include "driverlib/uart.h"
+#include "driverlib/adc.h"
 
 
 //Definiciones
-#define PwmFreq 5000
+#define PwmFreq 2500//7500
 #define Clock 80000000
-#define SampleFreq 2500
+#define SampleFreq 1000//2500
 #define Degrees 57.295779
 #define MPU_OFFSET 0//20//35
 
+volatile int16_t sample;
+volatile bool posicion = false;
+volatile float sample_float;
 
 tI2CMInstance I2CInst;
 tMPU9150 MPU9150Inst;
@@ -71,7 +75,6 @@ void IntHandlerTimer0A(void){
 	MPU9150Done = false;
 	MPU9150DataRead(&MPU9150Inst, MPU9150Callback, 0);
 }
-
 ////////////////////////////////////////////////////////////////////////////////////
 void I2C1Configure(void)
 {
@@ -79,13 +82,43 @@ void I2C1Configure(void)
 	IntPrioritySet(INT_I2C1, 0x00);
 	I2CMInit(&I2CInst, I2C1_BASE, INT_I2C1, 0xff, 0xff, Clock);
 }
+
+void ADC(void) {
+	// Configuracion de la entrada analogica
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+	GPIOPinTypeADC(GPIO_PORTB_BASE, GPIO_PIN_5);
+	//GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_4);
+	// 1. Configuracion de reloj al modulo ADC0
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
+	posicion = true;
+	// 2. Configurar el numero de secuenciador (=3) y el trigger
+	ADCSequenceConfigure(ADC0_BASE, 3, ADC_TRIGGER_TIMER, 0);
+	// 3. Configurar el unico paso del secuenciador 3 para sensar el canal 11 y generar interrupcion
+	ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH11 | ADC_CTL_IE | ADC_CTL_END);
+	// 4. Configurar las interrupciones
+	ADCIntEnable(ADC0_BASE, 3);
+	IntEnable(INT_ADC0SS3);
+	//IntPrioritySet(INT_ADC0SS3, 2);
+	// 4. Habilitar el secuenciador 3
+	ADCSequenceEnable(ADC0_BASE, 3);
+}
+
+void IntHandlerADC0SS3(void){
+	ADCIntClear(ADC0_BASE, 3);
+	sample = ADC0_SSFIFO3_R - 2048;
+}
+
 void Timer0Configure(void){
 	uint32_t TimerCount;
 	TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
 	TimerCount=(Clock / SampleFreq);
 	TimerLoadSet(TIMER0_BASE, TIMER_A,  TimerCount-1);
+
+	TimerControlTrigger(TIMER0_BASE, TIMER_A, true);//Extra
+	TimerEnable(TIMER0_BASE, TIMER_A);//Extra
+
 	IntEnable(INT_TIMER0A);
-	IntPrioritySet(INT_TIMER0A, 0x00);
+	IntPrioritySet(INT_TIMER0A, 0x01);
 	TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 }
 
@@ -97,14 +130,12 @@ void MPU9150Configure(void){
 	{}
 	// Configure the MPU9150 for +/- 4 g accelerometer range.
 	MPU9150Done = false;
-	MPU9150ReadModifyWrite(&MPU9150Inst, MPU9150_O_ACCEL_CONFIG,~MPU9150_ACCEL_CONFIG_AFS_SEL_M,MPU9150_ACCEL_CONFIG_AFS_SEL_2G, MPU9150Callback,0);
-	while(!MPU9150Done)
-	{
-	}
+	MPU9150ReadModifyWrite(&MPU9150Inst, MPU9150_O_ACCEL_CONFIG,~MPU9150_ACCEL_CONFIG_AFS_SEL_M,MPU9150_ACCEL_CONFIG_AFS_SEL_2G, MPU9150Callback, 0);
+	while(!MPU9150Done){}
 }
 
 void ConfiguracionPWM(void){
-	PWMClock = SysCtlClockGet() / 64;
+	PWMClock = SysCtlClockGet()/64;
 	Load = (PWMClock / PwmFreq) - 1;
 
 	PWMGenConfigure(PWM1_BASE, PWM_GEN_0, PWM_GEN_MODE_DOWN);
@@ -154,13 +185,13 @@ float pidUpdate(float currentValue){
   dValue = Kd*(error - derivator);
   derivator = error; //Diferencia del valor anterior con el valor actual
 
-  PID = pValue + iValue + dValue - MPU_OFFSET;
+  PID = pValue + iValue + dValue;
   offset = PID;
 
   if(PID > 0){
-	  GPIOPinWrite(GPIO_PORTC_BASE,  GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, 0x90);
-  }else{
 	  GPIOPinWrite(GPIO_PORTC_BASE,  GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, 0x60);
+  }else{
+	  GPIOPinWrite(GPIO_PORTC_BASE,  GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, 0x90);
   }
 
 
@@ -221,6 +252,7 @@ void main(void){
 
 
 	/******************Conf Methods***********************************/
+	ADC();
 	ConfiguracionPWM();
 	I2C1Configure();
 	Timer0Configure();
@@ -231,12 +263,11 @@ void main(void){
 	TimerEnable(TIMER0_BASE, TIMER_A);
 
 	//pidInit(0.001, 0.00001, 0.01, -0.01, 0.01); //Coeficientes y limites de integrador
-	pidInit(13, 1, 10, -5, 5); //Coeficientes y limites de integrador//10, 2, 10, -5, 5////////////////8.494, 3.496, 0, -5, 5////////10, 1, 10, -5, 5
-	pidSetPoint(0);///////////////////////////////////////////////////////////////////////////////////////////////////45
-
-	CompDCMInit(&sDCM, 1/SampleFreq	, 0.02, 0.96, 0.02);
-
-	MPU9150DataAccelGetFloat(&MPU9150Inst, &Accel[0], &Accel[1],&Accel[2]);
+	pidInit(53.7445, 0, 53.0618, -5, 5); //Coeficientes y limites de integrador//10, 2, 10, -5, 5////////////////8.494, 3.496, 0, -5, 5////////10, 1, 10, -5, 5
+	pidSetPoint(0);///////////////////////////////////////////////////////////////////////////////////////////////////45   //13, 1, 10//15, 1, 12 //12V Fuente: 12, 0.02, 12 //Bat 15, 0.02, 12 //Bat Bien cargada: 18, 0, 7
+	CompDCMInit(&sDCM, 1/SampleFreq	, 0.598144, 0.133158, 0);//0.02, 0.96, 0.02
+	//0.0119629, 0.0001332, 0
+	MPU9150DataAccelGetFloat(&MPU9150Inst, &Accel[0], &Accel[1], &Accel[2]);
 
 	CompDCMAccelUpdate(&sDCM, Accel[0], Accel[1], Accel[2]);
 	CompDCMStart(&sDCM);
@@ -257,12 +288,15 @@ void main(void){
 			Pitch = -1.0*fPitch*Degrees;
 			Yaw = -1.0*fYaw*Degrees;
 
-			DutyC1 = (unsigned int)pidUpdate(Pitch + 5);
+			DutyC1 = (unsigned int)pidUpdate(Pitch);
 			//DutyC1=10;
 			PWMPulseWidthSet(PWM1_BASE, PWM_OUT_0, Load*DutyC1/100);
 			PWMPulseWidthSet(PWM1_BASE, PWM_OUT_1, Load*DutyC1/100);
 
-			MPU9150Done=false;
+			sample_float = (float)sample * 0.05;
+			//Ki = sample_float;
+
+			MPU9150Done = false;
 		}
 	}
 }
